@@ -1,0 +1,82 @@
+name: StrikeLab A55 Live Person Detector APK
+on:
+  push:
+    branches: [strikelab-a55-build]
+    paths:
+      - strikelab-live-detector.zip
+      - .github/workflows/strikelab-live-detector.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Compile and validate live detector
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Unpack standalone Android project
+        shell: bash
+        run: |
+          mkdir -p StrikeLabDetector
+          unzip -q strikelab-live-detector.zip -d StrikeLabDetector
+          test -f StrikeLabDetector/app/build.gradle
+          test -f StrikeLabDetector/app/src/main/java/com/strikelab/live/ModelDetector.java
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Locate Android SDK manager
+        shell: bash
+        run: |
+          test -d "$ANDROID_HOME"
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)
+          test -n "$SDKMANAGER"
+          echo "${SDKMANAGER%/*}" >> "$GITHUB_PATH"
+      - name: Install required SDK
+        run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Fetch official EfficientDet Lite0 model
+        shell: bash
+        run: |
+          mkdir -p StrikeLabDetector/app/src/main/assets
+          curl -fLSs --retry 3 --connect-timeout 25             'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/int8/latest/efficientdet_lite0.tflite'             -o StrikeLabDetector/app/src/main/assets/efficientdet_lite0.tflite
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('StrikeLabDetector/app/src/main/assets/efficientdet_lite0.tflite')
+          d=p.read_bytes()
+          assert len(d)>1000000 and d[4:8]==b'TFL3', 'Not a valid TFLite model'
+          print('Verified model bytes:',len(d))
+          PY
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Compile debug APK
+        run: gradle -p StrikeLabDetector --no-daemon --stacktrace assembleDebug
+      - name: Verify Android archive
+        shell: bash
+        run: |
+          APK=StrikeLabDetector/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -t "$APK" > /dev/null
+          python3 - <<'PY'
+          import zipfile
+          a='StrikeLabDetector/app/build/outputs/apk/debug/app-debug.apk'
+          with zipfile.ZipFile(a) as z:
+            names=set(z.namelist())
+            assert 'AndroidManifest.xml' in names
+            assert 'classes.dex' in names
+            assert 'assets/efficientdet_lite0.tflite' in names
+          print('APK manifest, DEX, and on-device model verified')
+          PY
+      - name: Publish APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: StrikeLabA55-Live-Detector-APK
+          path: StrikeLabDetector/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
