@@ -32,8 +32,12 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Configure Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Use preinstalled Android SDK
+        shell: bash
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          command -v sdkmanager
+          test -d "$ANDROID_HOME"
       - name: Install Android 35 SDK
         shell: bash
         run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
