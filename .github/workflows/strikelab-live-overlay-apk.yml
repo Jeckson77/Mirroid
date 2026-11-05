@@ -1,0 +1,55 @@
+name: StrikeLab A55 Live Visual Tracker APK
+on:
+  push:
+    branches: [strikelab-a55-build]
+    paths:
+      - 'strikelab-live-overlay.zip'
+      - '.github/workflows/strikelab-live-overlay-apk.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout build branch
+        uses: actions/checkout@v4
+      - name: Extract standalone live tracker project
+        shell: bash
+        run: |
+          mkdir -p StrikeLabLive
+          unzip -qo strikelab-live-overlay.zip -d StrikeLabLive
+          test -f StrikeLabLive/settings.gradle
+          test -f StrikeLabLive/app/src/main/AndroidManifest.xml
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Use Android SDK manager
+        shell: bash
+        run: |
+          test -d "$ANDROID_HOME"
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)
+          test -n "$SDKMANAGER"
+          echo "${SDKMANAGER%/*}" >> "$GITHUB_PATH"
+      - name: SDK 35
+        run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Compile standalone app
+        run: gradle -p StrikeLabLive --no-daemon --stacktrace assembleDebug
+      - name: Verify APK archive
+        run: |
+          test -s StrikeLabLive/app/build/outputs/apk/debug/app-debug.apk
+          unzip -t StrikeLabLive/app/build/outputs/apk/debug/app-debug.apk >/dev/null
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: StrikeLabA55-Live-Visual-Tracker-APK
+          path: StrikeLabLive/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
