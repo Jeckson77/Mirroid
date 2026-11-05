@@ -36,8 +36,11 @@ jobs:
         shell: bash
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
-          command -v sdkmanager
           test -d "$ANDROID_HOME"
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)
+          test -n "$SDKMANAGER"
+          echo "${SDKMANAGER%/*}" >> "$GITHUB_PATH"
+          "$SDKMANAGER" --version
       - name: Install Android 35 SDK
         shell: bash
         run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
